@@ -3,7 +3,7 @@ pragma solidity 0.8.20;
 
 /// @title Safe casting methods
 /// @notice Contains methods for safely casting between types
-library SafeCastt {
+library SafeCast {
     error SafeCastOverflow();
 
     /// @notice Cast a uint256 to a uint160, revert on overflow

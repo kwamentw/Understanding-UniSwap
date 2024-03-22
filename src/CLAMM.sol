@@ -4,11 +4,12 @@ pragma solidity 0.8.20;
 import {Tick} from "./lib/Tick.sol";
 import {TickMath} from "./lib/TickMath.sol";
 import {Positionn} from "./lib/Positionn.sol";
-import {SafeCastt} from "./lib/SafeCast.sol";
+import {SafeCast} from "./lib/SafeCast.sol";
+import {IERC20} from "./interfaces/IERC20.sol";
 
 contract Clamm {
-    using SafeCastt for uint256;
-    using SafeCastt for int256;
+    using SafeCast for uint256;
+    using SafeCast for int256;
     using Positionn for mapping(bytes32 => Positionn.Info);
     using Positionn for Positionn.Info;
 
@@ -60,7 +61,7 @@ contract Clamm {
         address owner;
         int24 tickLower;
         int24 tickUpper;
-        uint128 liquidityDelta;
+        int128 liquidityDelta;
     }
 
     function _modifyPosition(
@@ -91,5 +92,15 @@ contract Clamm {
                 liquidityDelta: int256(uint256(amount)).toInt128()
             })
         );
+
+        amount0 = uint256(amount0Int);
+        amount1 = uint256(amount1Int);
+
+        if (amount0 > 0) {
+            IERC20(token0).transferFrom(msg.sender, address(this), amount0);
+        }
+        if (amount1 > 0) {
+            IERC20(token1).transferFrom(msg.sender, address(this), amount1);
+        }
     }
 }
