@@ -13,4 +13,33 @@ library Positionn {
         uint256 feeGrowthInside0LastX128;
         uint256 feeGrowthInside1LastX128;
     }
+
+    function get(
+        mapping(bytes32 => Info) storage self,
+        address owner,
+        int24 tickLower,
+        int24 tickUpper
+    ) internal view returns (Positionn.Info storage position) {
+        position = self[
+            keccak256(abi.encodePacked(owner, tickLower, tickUpper))
+        ];
+    }
+
+    function update(
+        Info storage self,
+        int128 liquidityDelta,
+        uint256 feeGrowthInside0X128,
+        uint256 feeGrowthInside1X128
+    ) internal {
+        Info memory _self = self;
+        if (liquidityDelta == 0) {
+            require(_self.liquidity > 0, "0 Liquidity");
+        }
+
+        if (liquidityDelta != 0) {
+            self.liquidity = liquidityDelta < 0
+                ? _self.liquidity - uint128(-liquidityDelta)
+                : _self.liquidity + uint128(liquidityDelta);
+        }
+    }
 }
