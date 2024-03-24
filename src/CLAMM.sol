@@ -35,6 +35,8 @@ contract Clamm {
     }
 
     Slot0 public slot0;
+    uint256 public feeGrowthGlobal0X128;
+    uint256 public feeGrowthGlobal1X128;
     uint128 public liquidity;
     mapping(int24 => Tick.Info) public ticks;
     mapping(bytes32 => Positionn.Info) public positions;
@@ -259,6 +261,142 @@ contract Clamm {
                 position.tokensOwed0 + uint128(amount0),
                 position.tokensOwed1 + uint128(amount1)
             );
+        }
+    }
+
+    struct SwapCache {
+        // liquidity at the begining of the swap
+        uint128 liquidityStart;
+    }
+
+    // the top level state of the swap
+    struct SwapState {
+        // the amount remaining to be swapped in/out of the input/output asset
+        int256 amountSpecifiedRemaining;
+        // the amount already swapped in/out of the output/input asset
+        int256 amountCalculated;
+        // current sqrt price
+        uint160 sqrtPriceX96;
+        //the tick  associated with the current price
+        int24 tick;
+        // the global fee growth of the input token
+        uint256 feeGrowthGlobalX128;
+        // the current liquidity in range
+        uint128 liquidity;
+    }
+
+    struct StepComputations {
+        // the price at the begining of the step
+        uint160 sqrtPriceStartX96;
+        // the next tick to swap to from the current tick in the swap direction
+        int24 tickNext;
+        // whether ticknext is initialised or not
+        bool iniitialized;
+        // sqrt(price) for the next tick (1/0)
+        uint160 sqrtPriceNextX96;
+        // how much is being swapped in this step
+        uint256 amountIn;
+        // how much is swapped out
+        uint256 amountOut;
+        // how much fee is being paid in
+        uint256 feeAmount;
+    }
+
+    function swap(
+        address recipient,
+        bool zeroForOne,
+        int256 amountSpecified,
+        uint160 sqrtPriceLimitX96
+    ) external lock returns (int256 amount0, int256 amount1) {
+        require(amountSpecified != 0);
+
+        Slot0 memory slot0Start = slot0;
+        // token 1 | token 0
+        // --------|---------
+        //        tick
+        // <-- zero for one
+        require(
+            zeroForOne
+                ? sqrtPriceLimitX96 < slot0Start.sqrtPriceX96 &&
+                    sqrtPriceLimitX96 > TickMath.MIN_SQRT_RATIO
+                : sqrtPriceLimitX96 > slot0Start.sqrtPriceX96 &&
+                    sqrtPriceLimitX96 < TickMath.MAX_SQRT_RATIO,
+            "Invalid sqrt price limit"
+        );
+
+        SwapCache memory cache = SwapCache({liquidityStart: liquidity});
+        bool exactInput = amountSpecified > 0;
+        SwapState memory state = SwapState({
+            amountSpecifiedRemaining: amountSpecified,
+            amountCalculated: 0,
+            sqrtPriceX96: slot0Start.sqrtPriceX96,
+            tick: slot0Start.tick,
+            feeGrowthGlobalX128: zeroForOne
+                ? feeGrowthGlobal0X128
+                : feeGrowthGlobal1X128,
+            liquidity: cache.liquidityStart
+        });
+        // TODO
+        while (true) {}
+
+        // Update sqrtPriceX96 and tick
+        if (state.tick != slot0Start.tick) {
+            (slot0.sqrtPriceX96, slot0.tick) = (state.sqrtPriceX96, state.tick);
+        } else {
+            slot0.sqrtPriceX96 = state.sqrtPriceX96;
+        }
+
+        // Update Liquidity
+        if (cache.liquidityStart != state.liquidity) {
+            liquidity = state.liquidity;
+        }
+
+        // Update FeeGrowth
+        if (zeroForOne) {
+            feeGrowthGlobal0X128 = state.feeGrowthGlobalX128;
+        } else {
+            feeGrowthGlobal1X128 = state.feeGrowthGlobalX128;
+        }
+
+        // Set amount0 and amount1
+        // zero for one | exact input |
+        //    true      |    true     | amount 0 = specified - remaining (> 0)
+        //              |             | amount 1 = calculated            (< 0)
+        //    false     |    false    | amount 0 = specified - remaining (< 0)
+        //              |             | amount 1 = calculated            (> 0)
+        //    false     |    true     | amount 0 = calculated            (< 0)
+        //              |             | amount 1 = specified - remaining (> 0)
+        //    true      |    false    | amount 0 = calculated            (> 0)
+        //              |             | amount 1 = specified - remaining (< 0)
+
+        (amount0, amount1) = zeroForOne == exactInput
+            ? (
+                amountSpecified - state.amountSpecifiedRemaining,
+                state.amountCalculated
+            )
+            : (
+                state.amountCalculated,
+                amountSpecified - state.amountSpecifiedRemaining
+            );
+
+        if (zeroForOne) {
+            if (amount1 < 0) {
+                IERC20(token1).transfer(recipient, uint256(-amount1));
+                IERC20(token0).transferFrom(
+                    msg.sender,
+                    address(this),
+                    uint256(amount0)
+                );
+            }
+        } else {
+            if (amount0 < 0) {
+                IERC20(token0).transfer(recipient, uint256(-amount0));
+                IERC20(token1).transferFrom(
+                    msg.sender,
+                    address(this),
+                    uint256(amount1)
+                );
+            }
         }
     }
 }
