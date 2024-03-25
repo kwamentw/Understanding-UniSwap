@@ -7,6 +7,7 @@ import {Positionn} from "./lib/Positionn.sol";
 import {SafeCast} from "./lib/SafeCast.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {SqrtPriceMath} from "./lib/SqrtPriceMath.sol";
+import {SwapMath} from "./SwapMath.sol";
 
 function checkTicks(int24 tickLower, int24 tickUpper) pure {
     require(tickLower < tickUpper);
@@ -337,7 +338,51 @@ contract Clamm {
             liquidity: cache.liquidityStart
         });
         // TODO
-        while (true) {}
+        while (
+            state.amountSpecifiedRemaining != 0 &&
+            state.sqrtPriceX96 != sqrtPriceLimitX96
+        ) {
+            StepComputations memory step;
+            step.sqrtPriceStartX96 = state.sqrtPriceX96;
+
+            //TODO:next initialised tick
+            step.tickNext = state.tick + 1;
+            step.sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(step.tickNext);
+
+            (
+                state.sqrtPriceX96,
+                step.amountIn,
+                step.amountOut,
+                step.feeAmount
+            ) = SwapMath.ComputeSwapStep(
+                state.sqrtPriceX96,
+                (
+                    zeroForOne
+                        ? step.sqrtPriceNextX96 < sqrtPriceLimitX96
+                        : step.sqrtPriceNextX96 > sqrtPriceLimitX96
+                )
+                    ? sqrtPriceLimitX96
+                    : step.sqrtPriceNextX96,
+                state.liquidity,
+                state.amountSpecifiedRemaining,
+                fee
+            );
+
+            if (exactInput) {
+                state.amountSpecifiedRemaining -= (step.amountIn -
+                    step.feeAmount).toInt256();
+                state.amountCalculated -= step.amountOut.toInt256();
+            } else {
+                state.amountSpecifiedRemaining += step.amountOut.toInt256();
+                state.amountCalculated += (step.amountIn + step.feeAmount)
+                    .toInt256();
+            }
+
+            // TODO update fee tracker
+
+            //TODO
+            if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {}
+        }
 
         // Update sqrtPriceX96 and tick
         if (state.tick != slot0Start.tick) {
