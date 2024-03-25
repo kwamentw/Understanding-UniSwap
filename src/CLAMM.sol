@@ -8,6 +8,7 @@ import {SafeCast} from "./lib/SafeCast.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {SqrtPriceMath} from "./lib/SqrtPriceMath.sol";
 import {SwapMath} from "./SwapMath.sol";
+import {TickBitmap} from "./lib/TickBitmap.sol";
 
 function checkTicks(int24 tickLower, int24 tickUpper) pure {
     require(tickLower < tickUpper);
@@ -19,6 +20,7 @@ contract Clamm {
     using SafeCast for uint256;
     using SafeCast for int256;
     using Tick for mapping(int24 => Tick.Info);
+    using TickBitmap for mapping(int16 => uint256);
     using Positionn for mapping(bytes32 => Positionn.Info);
     using Positionn for Positionn.Info;
 
@@ -40,6 +42,7 @@ contract Clamm {
     uint256 public feeGrowthGlobal1X128;
     uint128 public liquidity;
     mapping(int24 => Tick.Info) public ticks;
+    mapping(int16 => uint256) public tickBitmap;
     mapping(bytes32 => Positionn.Info) public positions;
 
     modifier lock() {
@@ -105,6 +108,12 @@ contract Clamm {
                 true,
                 maxLiquidityPerTick
             );
+            if (flippedLower) {
+                tickBitmap.flipTick(tickLower, tickSpacing);
+            }
+            if (flippedUpper) {
+                tickBitmap.flipTick(tickUpper, tickSpacing);
+            }
         }
 
         // TODO Fees
@@ -292,7 +301,7 @@ contract Clamm {
         // the next tick to swap to from the current tick in the swap direction
         int24 tickNext;
         // whether ticknext is initialised or not
-        bool iniitialized;
+        bool initialized;
         // sqrt(price) for the next tick (1/0)
         uint160 sqrtPriceNextX96;
         // how much is being swapped in this step
@@ -345,8 +354,22 @@ contract Clamm {
             StepComputations memory step;
             step.sqrtPriceStartX96 = state.sqrtPriceX96;
 
-            //TODO:next initialised tick
-            step.tickNext = state.tick + 1;
+            (step.tickNext, step.initialized) = tickBitmap
+                .nextInitializedTickWithinOneWord(
+                    state.tick,
+                    tickSpacing,
+                    //token 0 | token 1
+                    //       tick
+                    // zero for one --> price decreases --> lte
+                    // one for zero --> price increases --> gt
+                    zeroForOne
+                );
+            // Bound next tick so it remains between min and max tick positions
+            if (step.tickNext < TickMath.MIN_TICK) {
+                step.tickNext = TickMath.MIN_TICK;
+            } else if (step.tickNext > TickMath.MAX_TICK) {
+                step.tickNext = TickMath.MAX_TICK;
+            }
             step.sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(step.tickNext);
 
             (
@@ -381,7 +404,30 @@ contract Clamm {
             // TODO update fee tracker
 
             //TODO
-            if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {}
+            if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {
+                if (step.initialized) {
+                    int128 liquidityNet = ticks.cross(
+                        step.tickNext,
+                        zeroForOne
+                            ? state.feeGrowthGlobalX128
+                            : feeGrowthGlobal0X128,
+                        zeroForOne
+                            ? feeGrowthGlobal1X128
+                            : state.feeGrowthGlobalX128
+                    );
+
+                    if (zeroForOne) {
+                        liquidityNet = -liquidityNet;
+                    }
+
+                    state.liquidity = liquidity < 0
+                        ? state.liquidity - uint128(-liquidityNet)
+                        : state.liquidity + uint128(liquidityNet);
+                }
+                state.tick = zeroForOne ? step.tickNext - 1 : step.tickNext;
+            } else if (state.sqrtPriceX96 != step.sqrtPriceStartX96) {
+                state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
+            }
         }
 
         // Update sqrtPriceX96 and tick
