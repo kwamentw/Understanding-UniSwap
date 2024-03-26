@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
 
-import {FullMath} from "./lib/FullMath.sol";
-import {SqrtPriceMath} from "./lib/SqrtPriceMath.sol";
+import {FullMath} from "./FullMath.sol";
+import {SqrtPriceMath} from "./SqrtPriceMath.sol";
 
 library SwapMath {
     function ComputeSwapStep(

@@ -7,7 +7,7 @@ import {Positionn} from "./lib/Positionn.sol";
 import {SafeCast} from "./lib/SafeCast.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {SqrtPriceMath} from "./lib/SqrtPriceMath.sol";
-import {SwapMath} from "./SwapMath.sol";
+import {SwapMath} from "./lib/SwapMath.sol";
 import {TickBitmap} from "./lib/TickBitmap.sol";
 import {FullMath} from "./lib/FullMath.sol";
 import {FixedPoint128} from "./lib/FixedPoint128.sol";
