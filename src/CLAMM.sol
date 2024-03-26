@@ -9,6 +9,8 @@ import {IERC20} from "./interfaces/IERC20.sol";
 import {SqrtPriceMath} from "./lib/SqrtPriceMath.sol";
 import {SwapMath} from "./SwapMath.sol";
 import {TickBitmap} from "./lib/TickBitmap.sol";
+import {FullMath} from "./lib/FullMath.sol";
+import {FixedPoint128} from "./lib/FixedPoint128.sol";
 
 function checkTicks(int24 tickLower, int24 tickUpper) pure {
     require(tickLower < tickUpper);
@@ -82,9 +84,8 @@ contract Clamm {
     ) private returns (Positionn.Info storage position) {
         position = positions.get(owner, tickLower, tickUpper);
 
-        // TODO:FEES
-        uint256 _feeGrowthGlobal0x128 = 0;
-        uint256 _feeGrowthGlobal1x128 = 0;
+        uint256 _feeGrowthGlobal0x128 = feeGrowthGlobal0X128;
+        uint256 _feeGrowthGlobal1x128 = feeGrowthGlobal1X128;
 
         bool flippedUpper;
         bool flippedLower;
@@ -116,8 +117,20 @@ contract Clamm {
             }
         }
 
+        (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) = ticks
+            .getFeeGrowthInside(
+                tickLower,
+                tickUpper,
+                tick,
+                _feeGrowthGlobal0x128,
+                _feeGrowthGlobal1x128
+            );
         // TODO Fees
-        position.update(liquidityDelta, 0, 0);
+        position.update(
+            liquidityDelta,
+            feeGrowthInside0X128,
+            feeGrowthInside1X128
+        );
 
         if (liquidityDelta < 0) {
             if (flippedLower) {
@@ -402,8 +415,14 @@ contract Clamm {
             }
 
             // TODO update fee tracker
+            if (state.liquidity > 0) {
+                state.feeGrowthGlobalX128 += FullMath.mulDiv(
+                    step.feeAmount,
+                    FixedPoint128.Q128,
+                    state.liquidity
+                );
+            }
 
-            //TODO
             if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {
                 if (step.initialized) {
                     int128 liquidityNet = ticks.cross(
