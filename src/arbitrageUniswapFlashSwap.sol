@@ -8,7 +8,7 @@ import {IUniswapV3Pool} from "./interfaces/IUniSwapV3Pool.sol";
 
 address constant SWAP_ROUTER_02 = 0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45;
 
-contract FlashSwap {
+contract ArbitrageFlashSwap {
     ISwapRouter02 constant ROUTER = ISwapRouter02(SWAP_ROUTER_02);
     uint160 private constant MIN_SQRT_RATIO = 4295128739;
     uint160 private constant MAX_SQRT_RATIO =
